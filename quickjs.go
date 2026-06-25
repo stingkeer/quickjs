@@ -343,7 +343,7 @@ func (c *Context) Float64(v float64) Value {
 func (c *Context) String(s string) Value {
 	c.runtime.lock()
 	defer c.runtime.unlock()
-	ptr, _ := c.runtime.bridge.NewString(c.runtime.goCtx, c.ctxPtr, s)
+	ptr, _ := c.runtime.bridge.NewStringLen(c.runtime.goCtx, c.ctxPtr, s)
 	return Value{ctx: c, ptr: ptr}
 }
 

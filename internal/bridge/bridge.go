@@ -987,8 +987,14 @@ func (b *Bridge) ToFloat64(ctx context.Context, ctxPtr, valPtr uint32) (float64,
 }
 
 func (b *Bridge) ToString(ctx context.Context, ctxPtr, valPtr uint32) (string, error) {
-	// Get the string using JS_ToCString
-	results, err := b.fnToCString.Call(ctx, uint64(ctxPtr), uint64(valPtr))
+	// Get the string using JS_ToCStringLen (binary-safe, no null truncation)
+	lenPtr, err := b.Alloc(ctx, 8) // allocate space for size_t
+	if err != nil {
+		return "", err
+	}
+	defer b.Free(ctx, lenPtr)
+
+	results, err := b.fnToCStringLen.Call(ctx, uint64(ctxPtr), uint64(valPtr), uint64(lenPtr))
 	if err != nil {
 		return "", err
 	}
@@ -997,13 +1003,21 @@ func (b *Bridge) ToString(ctx context.Context, ctxPtr, valPtr uint32) (string, e
 		return "", nil
 	}
 
-	// Read the string (up to 64KB)
-	str := b.ReadCString(strPtr, 65536)
+	// Read the length (size_t, 8 bytes on 64-bit WASM)
+	lenBuf, ok := b.memory.Read(lenPtr, 8)
+	if !ok {
+		_, _ = b.fnFreeCString.Call(ctx, uint64(ctxPtr), uint64(strPtr))
+		return "", errors.New("failed to read string length")
+	}
+	strLen := binary.LittleEndian.Uint64(lenBuf)
+
+	// Read the string data using the correct length
+	strBytes := b.ReadBytes(strPtr, uint32(strLen))
 
 	// Free the C string
 	_, _ = b.fnFreeCString.Call(ctx, uint64(ctxPtr), uint64(strPtr))
 
-	return str, nil
+	return string(strBytes), nil
 }
 
 // ============================================================================
